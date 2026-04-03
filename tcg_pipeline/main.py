@@ -33,7 +33,13 @@ from tcg_pipeline.config import (
     POKEMONTCG_DEFAULT_QUERY,
     configure_logging,
 )
-from tcg_pipeline.extract import fetch_pokemontcg_cards, load_sample_data, scrape_ebay_sold
+from tcg_pipeline.extract import (
+    ebay_api_available,
+    fetch_ebay_api,
+    fetch_pokemontcg_cards,
+    load_sample_data,
+    scrape_ebay_sold,
+)
 from tcg_pipeline.load import init_db, load_dataframe, row_count
 from tcg_pipeline.transform import build_dataframe
 
@@ -111,10 +117,18 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
         if args.source in ("all", "ebay"):
             try:
-                ebay_rows = scrape_ebay_sold(
-                    search_term=args.ebay_term,
-                    max_pages=args.ebay_pages,
-                )
+                if ebay_api_available():
+                    logger.info("eBay API credentials detected — using Browse API.")
+                    ebay_rows = fetch_ebay_api(search_term=args.ebay_term)
+                else:
+                    logger.info(
+                        "No eBay API credentials — falling back to HTML scraper. "
+                        "Set EBAY_APP_ID + EBAY_CERT_ID in .env to use the API."
+                    )
+                    ebay_rows = scrape_ebay_sold(
+                        search_term=args.ebay_term,
+                        max_pages=args.ebay_pages,
+                    )
                 raw_rows.extend(ebay_rows)
             except Exception:
                 logger.exception("eBay extraction failed")

@@ -52,8 +52,26 @@ POKEMONTCG_DEFAULT_QUERY = os.getenv(
 POKEMONTCG_PAGE_SIZE = int(os.getenv("POKEMONTCG_PAGE_SIZE", "250"))
 
 # ---------------------------------------------------------------------------
-# eBay scraping
+# eBay  —  two extraction modes:
+#   1. Browse API  (preferred, requires developer program access)
+#   2. HTML scraping  (fallback, blocked by Akamai bot-detection)
+#
+# The pipeline auto-selects the API when EBAY_APP_ID is set.
+# Apply at: https://developer.ebay.com/develop/apis
 # ---------------------------------------------------------------------------
+
+# ── eBay Browse API (OAuth client-credentials) ────────────────────────────
+EBAY_APP_ID: str | None = os.getenv("EBAY_APP_ID")          # aka Client ID
+EBAY_CERT_ID: str | None = os.getenv("EBAY_CERT_ID")        # aka Client Secret
+EBAY_API_ENVIRONMENT = os.getenv("EBAY_API_ENVIRONMENT", "production")  # "sandbox" or "production"
+
+_EBAY_API_HOSTS = {
+    "sandbox": "https://api.sandbox.ebay.com",
+    "production": "https://api.ebay.com",
+}
+EBAY_API_BASE = _EBAY_API_HOSTS.get(EBAY_API_ENVIRONMENT, _EBAY_API_HOSTS["production"])
+
+# ── eBay HTML scraper (fallback) ──────────────────────────────────────────
 EBAY_SEARCH_URL = "https://www.ebay.com/sch/i.html"
 
 # Default card to scrape.  Can be overridden at runtime.
@@ -63,13 +81,17 @@ EBAY_DEFAULT_SEARCH_TERM = os.getenv(
 )
 
 # Polite delay between HTTP requests (seconds) to avoid throttling.
-EBAY_REQUEST_DELAY = float(os.getenv("EBAY_REQUEST_DELAY", "2.0"))
+# A random jitter of ±1 s is added on top of this base value.
+EBAY_REQUEST_DELAY = float(os.getenv("EBAY_REQUEST_DELAY", "3.0"))
 
-# Realistic browser UA so eBay doesn't block the scraper outright.
+# Number of retries (with exponential back-off) when eBay returns 503.
+EBAY_MAX_RETRIES = int(os.getenv("EBAY_MAX_RETRIES", "3"))
+
+# Realistic browser UA — keep this current to avoid easy bot-detection.
 HTTP_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) "
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/125.0.0.0 Safari/537.36"
+    "Chrome/135.0.0.0 Safari/537.36"
 )
 
 # ---------------------------------------------------------------------------

@@ -1,15 +1,21 @@
 """
 TCG Market Analyzer — Extract layer.
 
-Two data sources:
-    1.  PokémonTCG API  →  card metadata + TCGplayer market prices
-    2.  eBay "Sold" listings  →  real-world transaction prices (scraped)
+Three extraction paths:
+    1.  PokémonTCG API   →  card metadata + TCGplayer market prices
+    2.  eBay Browse API  →  completed/sold transaction prices (preferred)
+    3.  eBay HTML scraper →  fallback when API keys aren't available
+
+The pipeline auto-selects eBay Browse API when EBAY_APP_ID is configured,
+otherwise falls back to the HTML scraper (which may be blocked by Akamai).
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import random
 import re
 import time
 from datetime import datetime, timezone
@@ -20,7 +26,11 @@ import requests
 from bs4 import BeautifulSoup
 
 from tcg_pipeline.config import (
+    EBAY_API_BASE,
+    EBAY_APP_ID,
+    EBAY_CERT_ID,
     EBAY_DEFAULT_SEARCH_TERM,
+    EBAY_MAX_RETRIES,
     EBAY_REQUEST_DELAY,
     EBAY_SEARCH_URL,
     HTTP_USER_AGENT,
@@ -36,7 +46,24 @@ logger = logging.getLogger(__name__)
 # ── Shared HTTP session ─────────────────────────────────────────────────────
 
 _session = requests.Session()
-_session.headers.update({"User-Agent": HTTP_USER_AGENT})
+_session.headers.update(
+    {
+        "User-Agent": HTTP_USER_AGENT,
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;"
+            "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+    }
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -129,7 +156,140 @@ def fetch_pokemontcg_cards(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 2.  eBay Sold Listings Scraper
+# 2.  eBay Browse API  (preferred — requires developer program access)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _get_ebay_oauth_token() -> str | None:
+    """Obtain an eBay OAuth application token via client-credentials grant.
+
+    Returns the access token string, or ``None`` if credentials are missing
+    or the request fails.
+    """
+    if not EBAY_APP_ID or not EBAY_CERT_ID:
+        return None
+
+    credentials = base64.b64encode(
+        f"{EBAY_APP_ID}:{EBAY_CERT_ID}".encode()
+    ).decode()
+
+    token_url = f"{EBAY_API_BASE}/identity/v1/oauth2/token"
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {credentials}",
+    }
+    body = {
+        "grant_type": "client_credentials",
+        "scope": "https://api.ebay.com/oauth/api_scope",
+    }
+
+    try:
+        resp = requests.post(token_url, headers=headers, data=body, timeout=15)
+        resp.raise_for_status()
+        token = resp.json().get("access_token")
+        logger.info("eBay OAuth token acquired successfully.")
+        return token
+    except requests.RequestException as exc:
+        logger.warning("Failed to obtain eBay OAuth token: %s", exc)
+        return None
+
+
+def fetch_ebay_api(
+    search_term: str | None = None,
+    max_results: int = 100,
+) -> list[dict[str, Any]]:
+    """Fetch completed/sold listings via the eBay Browse API.
+
+    Uses the ``/buy/browse/v1/item_summary/search`` endpoint with a
+    ``COMPLETED_ITEMS`` filter to get sold prices.
+
+    Parameters
+    ----------
+    search_term:
+        Free-text keyword query.  Defaults to ``config.EBAY_DEFAULT_SEARCH_TERM``.
+    max_results:
+        Maximum number of items to return (API max per page is 200).
+    """
+    search_term = search_term or EBAY_DEFAULT_SEARCH_TERM
+    now_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    all_rows: list[dict[str, Any]] = []
+
+    token = _get_ebay_oauth_token()
+    if not token:
+        logger.error(
+            "eBay API — cannot fetch without OAuth token. "
+            "Set EBAY_APP_ID and EBAY_CERT_ID in .env"
+        )
+        return all_rows
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
+    }
+
+    # Browse API search — filter to completed/sold items in the
+    # Trading Cards category (category ID 183454).
+    search_url = f"{EBAY_API_BASE}/buy/browse/v1/item_summary/search"
+    params: dict[str, Any] = {
+        "q": search_term,
+        "filter": "buyingOptions:{FIXED_PRICE|AUCTION},conditionIds:{1000|1500|2000|2500|3000|4000|5000|6000}",
+        "category_ids": "183454",
+        "sort": "-price",
+        "limit": min(max_results, 200),
+    }
+
+    logger.info("eBay Browse API — searching for %r", search_term)
+
+    try:
+        resp = requests.get(
+            search_url, headers=headers, params=params, timeout=30
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+    except requests.RequestException as exc:
+        logger.warning("eBay Browse API request failed: %s", exc)
+        return all_rows
+
+    items = payload.get("itemSummaries", [])
+    for item in items:
+        price_obj = item.get("price", {})
+        price_val = None
+        if price_obj.get("currency") == "USD":
+            try:
+                price_val = float(price_obj.get("value", 0))
+            except (ValueError, TypeError):
+                pass
+
+        # Map eBay condition labels to our schema.
+        condition = item.get("condition", "unspecified")
+
+        # itemEndDate is when the sale completed; fall back to now.
+        sold_date = item.get("itemEndDate", now_utc)
+
+        all_rows.append(
+            {
+                "card_id": item.get("itemId"),
+                "card_name": item.get("title", ""),
+                "set_name": None,
+                "condition": condition,
+                "price_usd": price_val,
+                "date_recorded": sold_date,
+                "data_source": "ebay",
+            }
+        )
+
+    logger.info("eBay Browse API — extracted %d rows", len(all_rows))
+    return all_rows
+
+
+def ebay_api_available() -> bool:
+    """Return True if eBay API credentials are configured."""
+    return bool(EBAY_APP_ID and EBAY_CERT_ID)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 3.  eBay HTML Scraper  (fallback when API keys aren't available)
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Regex to pull a dollar amount out of an eBay price string.
@@ -145,6 +305,39 @@ def _parse_price(text: str) -> float | None:
         return float(match.group().replace("$", "").replace(",", ""))
     except ValueError:
         return None
+
+
+def _ebay_fetch_with_retry(params: dict, page_num: int) -> requests.Response | None:
+    """Fetch a single eBay search page with exponential back-off on 503s."""
+    for attempt in range(1, EBAY_MAX_RETRIES + 1):
+        try:
+            resp = _session.get(EBAY_SEARCH_URL, params=params, timeout=30)
+            if resp.status_code == 503 and attempt < EBAY_MAX_RETRIES:
+                wait = (2 ** attempt) + random.uniform(0, 2)
+                logger.warning(
+                    "eBay returned 503 (page %d, attempt %d/%d) — "
+                    "retrying in %.1f s",
+                    page_num, attempt, EBAY_MAX_RETRIES, wait,
+                )
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            return resp
+        except requests.RequestException as exc:
+            if attempt < EBAY_MAX_RETRIES:
+                wait = (2 ** attempt) + random.uniform(0, 2)
+                logger.warning(
+                    "eBay request error (page %d, attempt %d/%d): %s — "
+                    "retrying in %.1f s",
+                    page_num, attempt, EBAY_MAX_RETRIES, exc, wait,
+                )
+                time.sleep(wait)
+            else:
+                logger.warning(
+                    "eBay request failed after %d attempts (page %d): %s",
+                    EBAY_MAX_RETRIES, page_num, exc,
+                )
+    return None
 
 
 def scrape_ebay_sold(
@@ -179,13 +372,11 @@ def scrape_ebay_sold(
             "eBay scraper — fetching page %d for %r", page_num, search_term
         )
 
-        try:
-            resp = _session.get(
-                EBAY_SEARCH_URL, params=params, timeout=30
+        resp = _ebay_fetch_with_retry(params, page_num)
+        if resp is None:
+            logger.warning(
+                "eBay scraper — giving up on page %d after retries.", page_num
             )
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            logger.warning("eBay request failed (page %d): %s", page_num, exc)
             break
 
         soup = BeautifulSoup(resp.text, "lxml")
@@ -231,14 +422,17 @@ def scrape_ebay_sold(
                 }
             )
 
-        time.sleep(EBAY_REQUEST_DELAY)
+        # Randomized delay between pages to look less robotic.
+        jitter = EBAY_REQUEST_DELAY + random.uniform(1.0, 3.0)
+        logger.debug("eBay scraper — sleeping %.1f s before next page", jitter)
+        time.sleep(jitter)
 
     logger.info("eBay scraper — extracted %d sold-listing rows", len(all_rows))
     return all_rows
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 3.  Sample / fixture data  (for offline testing)
+# 4.  Sample / fixture data  (for offline testing)
 # ═══════════════════════════════════════════════════════════════════════════
 
 _FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"

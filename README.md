@@ -5,11 +5,14 @@ An ETL (Extract → Transform → Load) pipeline that tracks **Pokémon card mar
 | Source | Method | Data |
 |---|---|---|
 | **pokemontcg.io API** | REST (`requests`) | Card metadata + TCGplayer market prices |
-| **eBay Sold Listings** | Web scraping (`BeautifulSoup4`) | Real-world transaction prices |
+| **eBay Browse API** | REST + OAuth (`requests`) | Sold transaction prices — preferred |
+| **eBay Sold Listings** | Web scraping (`BeautifulSoup4`) | Fallback when API keys aren't set |
 
 Cleaned data lands in a local **SQLite** database (`pokemon_market.db`) ready for analysis or dashboarding.
 
 > **⚠️ API Note (Apr 2026):** pokemontcg.io has been absorbed into [Scrydex](https://scrydex.com), a paid API service (starts at $29/mo). The legacy `api.pokemontcg.io/v2` endpoint still responds for now, but may be retired. Use `--sample-data` to develop and test the full pipeline offline without any API key or network access.
+
+> **🛠️ eBay Integration:** The pipeline supports two eBay modes. When `EBAY_APP_ID` + `EBAY_CERT_ID` are set in `.env`, it uses the official [eBay Browse API](https://developer.ebay.com/api-docs/buy/browse/overview.html) (structured JSON, reliable). Without those keys, it falls back to an HTML scraper which eBay's Akamai CDN may block. Apply for eBay developer access at [developer.ebay.com](https://developer.ebay.com/develop/apis).
 
 ---
 
@@ -64,16 +67,17 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. (Optional) Add your API key
+### 4. (Optional) Add your API keys
 
 ```bash
 cp .env.example .env
-# Edit .env and paste your free key from https://dev.pokemontcg.io
-# (or a paid Scrydex key when you migrate)
+# Edit .env and fill in your keys:
+#   - POKEMONTCG_API_KEY  — free from https://dev.pokemontcg.io (or Scrydex)
+#   - EBAY_APP_ID         — from https://developer.ebay.com (once accepted)
+#   - EBAY_CERT_ID        — from https://developer.ebay.com (once accepted)
 ```
 
-A key is **not required** for the legacy API — it works without one at a lower rate limit.  
-For **Scrydex**, a paid plan is required ($29+/mo). You can test everything locally first with `--sample-data`.
+No keys are required to get started — use `--sample-data` for fully offline testing.
 
 ### 5. Run the pipeline
 
@@ -135,8 +139,12 @@ All settings can be tuned via environment variables (or a `.env` file). See `.en
 | `POKEMONTCG_API_KEY` | *(none)* | API key (free for legacy, paid for Scrydex) |
 | `POKEMONTCG_API_BASE` | `https://api.pokemontcg.io/v2` | Override to point at Scrydex when ready |
 | `POKEMONTCG_DEFAULT_QUERY` | `set.id:"base1"` | Default card search query |
+| `EBAY_APP_ID` | *(none)* | eBay Developer Client ID — enables Browse API |
+| `EBAY_CERT_ID` | *(none)* | eBay Developer Client Secret |
+| `EBAY_API_ENVIRONMENT` | `production` | `sandbox` or `production` |
 | `EBAY_DEFAULT_SEARCH_TERM` | `Charizard Base Set 4/102` | eBay search term |
-| `EBAY_REQUEST_DELAY` | `2.0` | Seconds between eBay requests |
+| `EBAY_REQUEST_DELAY` | `3.0` | Base seconds between eBay requests (+random jitter) |
+| `EBAY_MAX_RETRIES` | `3` | Retry attempts with back-off on eBay 503s |
 | `LOG_LEVEL` | `INFO` | Python log level |
 
 ---
