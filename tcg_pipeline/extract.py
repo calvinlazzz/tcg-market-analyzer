@@ -8,10 +8,12 @@ Two data sources:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -26,6 +28,7 @@ from tcg_pipeline.config import (
     POKEMONTCG_API_KEY,
     POKEMONTCG_DEFAULT_QUERY,
     POKEMONTCG_PAGE_SIZE,
+    PROJECT_ROOT,
 )
 
 logger = logging.getLogger(__name__)
@@ -231,4 +234,70 @@ def scrape_ebay_sold(
         time.sleep(EBAY_REQUEST_DELAY)
 
     logger.info("eBay scraper — extracted %d sold-listing rows", len(all_rows))
+    return all_rows
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 3.  Sample / fixture data  (for offline testing)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"
+
+
+def load_sample_data() -> list[dict[str, Any]]:
+    """Load sample TCG + eBay data from local JSON fixtures.
+
+    This lets you run the full Transform → Load pipeline without making
+    any network requests — useful for local development, CI, and testing
+    while the pokemontcg.io API transitions to the paid Scrydex service.
+    """
+    all_rows: list[dict[str, Any]] = []
+    now_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    # ── TCG fixture ───────────────────────────────────────────────────
+    tcg_file = _FIXTURES_DIR / "sample_tcg_response.json"
+    if tcg_file.exists():
+        payload = json.loads(tcg_file.read_text(encoding="utf-8"))
+        for card in payload.get("data", []):
+            prices = card.get("tcgplayer", {}).get("prices", {})
+            if not prices:
+                all_rows.append(
+                    {
+                        "card_id": card.get("id", ""),
+                        "card_name": card.get("name", ""),
+                        "set_name": card.get("set", {}).get("name", ""),
+                        "condition": None,
+                        "price_usd": None,
+                        "date_recorded": now_utc,
+                        "data_source": "tcgplayer",
+                    }
+                )
+                continue
+            for sub_type, price_obj in prices.items():
+                market_price = price_obj.get("market") or price_obj.get("mid")
+                all_rows.append(
+                    {
+                        "card_id": card.get("id", ""),
+                        "card_name": card.get("name", ""),
+                        "set_name": card.get("set", {}).get("name", ""),
+                        "condition": sub_type,
+                        "price_usd": market_price,
+                        "date_recorded": now_utc,
+                        "data_source": "tcgplayer",
+                    }
+                )
+        logger.info("Sample data — loaded %d TCG rows from fixture", len(all_rows))
+    else:
+        logger.warning("TCG fixture not found at %s", tcg_file)
+
+    # ── eBay fixture ──────────────────────────────────────────────────
+    ebay_file = _FIXTURES_DIR / "sample_ebay_results.json"
+    if ebay_file.exists():
+        ebay_rows = json.loads(ebay_file.read_text(encoding="utf-8"))
+        all_rows.extend(ebay_rows)
+        logger.info("Sample data — loaded %d eBay rows from fixture", len(ebay_rows))
+    else:
+        logger.warning("eBay fixture not found at %s", ebay_file)
+
+    logger.info("Sample data — %d total rows ready for transform", len(all_rows))
     return all_rows

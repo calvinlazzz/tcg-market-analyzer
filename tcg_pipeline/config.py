@@ -31,8 +31,15 @@ DB_PATH = DATA_DIR / "pokemon_market.db"
 
 # ---------------------------------------------------------------------------
 # PokémonTCG API  (https://docs.pokemontcg.io)
+#
+# NOTE (Apr 2026): pokemontcg.io now redirects to Scrydex (scrydex.com),
+# a paid service ($29+/mo).  The legacy v2 API still responds *for now*,
+# but may be shut down.  Use --sample-data for offline development.
+# When you're ready to pay, swap the base URL + key below for Scrydex.
 # ---------------------------------------------------------------------------
-POKEMONTCG_API_BASE = "https://api.pokemontcg.io/v2"
+POKEMONTCG_API_BASE = os.getenv(
+    "POKEMONTCG_API_BASE", "https://api.pokemontcg.io/v2"
+)
 POKEMONTCG_API_KEY: str | None = os.getenv("POKEMONTCG_API_KEY")  # optional, raises rate-limit
 
 # Default search query — fetches Base Set cards.  Override via CLI or .env.

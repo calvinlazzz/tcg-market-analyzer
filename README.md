@@ -9,6 +9,8 @@ An ETL (Extract → Transform → Load) pipeline that tracks **Pokémon card mar
 
 Cleaned data lands in a local **SQLite** database (`pokemon_market.db`) ready for analysis or dashboarding.
 
+> **⚠️ API Note (Apr 2026):** pokemontcg.io has been absorbed into [Scrydex](https://scrydex.com), a paid API service (starts at $29/mo). The legacy `api.pokemontcg.io/v2` endpoint still responds for now, but may be retired. Use `--sample-data` to develop and test the full pipeline offline without any API key or network access.
+
 ---
 
 ## Project Structure
@@ -25,7 +27,10 @@ tcg-market-analyzer/
 ├── tests/
 │   ├── __init__.py
 │   ├── test_transform.py
-│   └── test_load.py
+│   ├── test_load.py
+│   └── fixtures/
+│       ├── sample_tcg_response.json
+│       └── sample_ebay_results.json
 ├── data/                # Created at runtime — holds pokemon_market.db
 ├── logs/                # Created at runtime — daily log files
 ├── .env.example         # Copy to .env and fill in your API key
@@ -63,15 +68,20 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env and paste your free key from https://pokemontcg.io
+# Edit .env and paste your free key from https://dev.pokemontcg.io
+# (or a paid Scrydex key when you migrate)
 ```
 
-A key is **not required** — the API works without one, just at a lower rate limit.
+A key is **not required** for the legacy API — it works without one at a lower rate limit.  
+For **Scrydex**, a paid plan is required ($29+/mo). You can test everything locally first with `--sample-data`.
 
 ### 5. Run the pipeline
 
 ```bash
-# Full pipeline — both TCGplayer API + eBay scraping
+# ✅ RECOMMENDED FIRST RUN — uses local fixture data, no API/network needed
+python -m tcg_pipeline.main --sample-data
+
+# Full pipeline — both TCGplayer API + eBay scraping (requires network)
 python -m tcg_pipeline.main
 
 # TCGplayer data only
@@ -122,7 +132,8 @@ All settings can be tuned via environment variables (or a `.env` file). See `.en
 
 | Variable | Default | Description |
 |---|---|---|
-| `POKEMONTCG_API_KEY` | *(none)* | Free API key — raises rate limit |
+| `POKEMONTCG_API_KEY` | *(none)* | API key (free for legacy, paid for Scrydex) |
+| `POKEMONTCG_API_BASE` | `https://api.pokemontcg.io/v2` | Override to point at Scrydex when ready |
 | `POKEMONTCG_DEFAULT_QUERY` | `set.id:"base1"` | Default card search query |
 | `EBAY_DEFAULT_SEARCH_TERM` | `Charizard Base Set 4/102` | eBay search term |
 | `EBAY_REQUEST_DELAY` | `2.0` | Seconds between eBay requests |
@@ -132,6 +143,7 @@ All settings can be tuned via environment variables (or a `.env` file). See `.en
 
 ## Future Plans
 
+- [ ] Migrate from legacy pokemontcg.io API to Scrydex paid API
 - [ ] Dockerize for headless deployment on a Linux homelab
 - [ ] Add a scheduled cron / systemd timer to run daily
 - [ ] Build a Grafana or Streamlit dashboard on top of the SQLite DB

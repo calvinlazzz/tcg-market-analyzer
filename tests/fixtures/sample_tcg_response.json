@@ -1,0 +1,161 @@
+{
+  "data": [
+    {
+      "id": "base1-4",
+      "name": "Charizard",
+      "supertype": "Pokémon",
+      "subtypes": ["Stage 2"],
+      "hp": "120",
+      "types": ["Fire"],
+      "set": {
+        "id": "base1",
+        "name": "Base",
+        "series": "Base",
+        "printedTotal": 102,
+        "total": 102,
+        "releaseDate": "1999/01/09"
+      },
+      "number": "4",
+      "rarity": "Rare Holo",
+      "tcgplayer": {
+        "url": "https://prices.pokemontcg.io/tcgplayer/base1-4",
+        "updatedAt": "2026/04/02",
+        "prices": {
+          "holofoil": {
+            "low": 199.99,
+            "mid": 349.99,
+            "high": 1500.0,
+            "market": 320.0,
+            "directLow": 279.99
+          }
+        }
+      }
+    },
+    {
+      "id": "base1-2",
+      "name": "Blastoise",
+      "supertype": "Pokémon",
+      "subtypes": ["Stage 2"],
+      "hp": "100",
+      "types": ["Water"],
+      "set": {
+        "id": "base1",
+        "name": "Base",
+        "series": "Base",
+        "printedTotal": 102,
+        "total": 102,
+        "releaseDate": "1999/01/09"
+      },
+      "number": "2",
+      "rarity": "Rare Holo",
+      "tcgplayer": {
+        "url": "https://prices.pokemontcg.io/tcgplayer/base1-2",
+        "updatedAt": "2026/04/02",
+        "prices": {
+          "holofoil": {
+            "low": 89.99,
+            "mid": 149.99,
+            "high": 500.0,
+            "market": 135.5,
+            "directLow": 99.99
+          }
+        }
+      }
+    },
+    {
+      "id": "base1-15",
+      "name": "Venusaur",
+      "supertype": "Pokémon",
+      "subtypes": ["Stage 2"],
+      "hp": "100",
+      "types": ["Grass"],
+      "set": {
+        "id": "base1",
+        "name": "Base",
+        "series": "Base",
+        "printedTotal": 102,
+        "total": 102,
+        "releaseDate": "1999/01/09"
+      },
+      "number": "15",
+      "rarity": "Rare Holo",
+      "tcgplayer": {
+        "url": "https://prices.pokemontcg.io/tcgplayer/base1-15",
+        "updatedAt": "2026/04/02",
+        "prices": {
+          "holofoil": {
+            "low": 64.99,
+            "mid": 109.99,
+            "high": 350.0,
+            "market": 95.0,
+            "directLow": 74.99
+          }
+        }
+      }
+    },
+    {
+      "id": "base1-7",
+      "name": "Hitmonchan",
+      "supertype": "Pokémon",
+      "subtypes": ["Basic"],
+      "hp": "70",
+      "types": ["Fighting"],
+      "set": {
+        "id": "base1",
+        "name": "Base",
+        "series": "Base",
+        "printedTotal": 102,
+        "total": 102,
+        "releaseDate": "1999/01/09"
+      },
+      "number": "7",
+      "rarity": "Rare Holo",
+      "tcgplayer": {
+        "url": "https://prices.pokemontcg.io/tcgplayer/base1-7",
+        "updatedAt": "2026/04/02",
+        "prices": {
+          "holofoil": {
+            "low": 19.99,
+            "mid": 34.99,
+            "high": 120.0,
+            "market": 28.75,
+            "directLow": 22.5
+          },
+          "normal": {
+            "low": 5.99,
+            "mid": 12.0,
+            "high": 40.0,
+            "market": 10.5
+          }
+        }
+      }
+    },
+    {
+      "id": "base1-25",
+      "name": "Pikachu",
+      "supertype": "Pokémon",
+      "subtypes": ["Basic"],
+      "hp": "40",
+      "types": ["Lightning"],
+      "set": {
+        "id": "base1",
+        "name": "Base",
+        "series": "Base",
+        "printedTotal": 102,
+        "total": 102,
+        "releaseDate": "1999/01/09"
+      },
+      "number": "25",
+      "rarity": "Common",
+      "tcgplayer": {
+        "url": "https://prices.pokemontcg.io/tcgplayer/base1-25",
+        "updatedAt": "2026/04/02",
+        "prices": {}
+      }
+    }
+  ],
+  "page": 1,
+  "pageSize": 250,
+  "count": 5,
+  "totalCount": 5
+}

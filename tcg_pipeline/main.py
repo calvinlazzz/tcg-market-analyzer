@@ -4,6 +4,9 @@ TCG Market Analyzer — ETL orchestrator.
 
 Usage
 -----
+    # Run with local sample data (no network — great for testing):
+    python -m tcg_pipeline.main --sample-data
+
     # Run the full pipeline (TCGplayer API + eBay scrape):
     python -m tcg_pipeline.main
 
@@ -30,7 +33,7 @@ from tcg_pipeline.config import (
     POKEMONTCG_DEFAULT_QUERY,
     configure_logging,
 )
-from tcg_pipeline.extract import fetch_pokemontcg_cards, scrape_ebay_sold
+from tcg_pipeline.extract import fetch_pokemontcg_cards, load_sample_data, scrape_ebay_sold
 from tcg_pipeline.load import init_db, load_dataframe, row_count
 from tcg_pipeline.transform import build_dataframe
 
@@ -68,6 +71,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=2,
         help="Number of eBay result pages to scrape (default: 2).",
     )
+    parser.add_argument(
+        "--sample-data",
+        action="store_true",
+        default=False,
+        help="Use local fixture files instead of live APIs (offline testing).",
+    )
     return parser.parse_args(argv)
 
 
@@ -89,22 +98,26 @@ def run_pipeline(args: argparse.Namespace) -> None:
     raw_rows: list[dict] = []
 
     # ── EXTRACT ───────────────────────────────────────────────────────────
-    if args.source in ("all", "tcgplayer"):
-        try:
-            tcg_rows = fetch_pokemontcg_cards(query=args.tcg_query)
-            raw_rows.extend(tcg_rows)
-        except Exception:
-            logger.exception("TCGplayer extraction failed")
+    if args.sample_data:
+        logger.info("Using LOCAL SAMPLE DATA — no network requests.")
+        raw_rows = load_sample_data()
+    else:
+        if args.source in ("all", "tcgplayer"):
+            try:
+                tcg_rows = fetch_pokemontcg_cards(query=args.tcg_query)
+                raw_rows.extend(tcg_rows)
+            except Exception:
+                logger.exception("TCGplayer extraction failed")
 
-    if args.source in ("all", "ebay"):
-        try:
-            ebay_rows = scrape_ebay_sold(
-                search_term=args.ebay_term,
-                max_pages=args.ebay_pages,
-            )
-            raw_rows.extend(ebay_rows)
-        except Exception:
-            logger.exception("eBay extraction failed")
+        if args.source in ("all", "ebay"):
+            try:
+                ebay_rows = scrape_ebay_sold(
+                    search_term=args.ebay_term,
+                    max_pages=args.ebay_pages,
+                )
+                raw_rows.extend(ebay_rows)
+            except Exception:
+                logger.exception("eBay extraction failed")
 
     if not raw_rows:
         logger.warning("No data extracted from any source — exiting early.")
